@@ -34,7 +34,7 @@ func main() {
 		fmt.Println(functionTimeout)
 	}
 
-	fmt.Println("Listening on port 8080")
+	fmt.Println("Listening on port 8080 ...")
 	var error = http.ListenAndServe(":8080", nil)
 	if error != nil {
 		panic(error)
