@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -10,6 +11,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/openbrisk/brisk-runtime-binary/src/util"
 )
 
 var (
@@ -120,6 +123,20 @@ func executeFunction(response http.ResponseWriter, request *http.Request) {
 	go func() {
 		defer waitGroup.Done()
 		functionOutput, err = command.CombinedOutput()
+
+		// Check if the result contains the forward structure.
+		functionResult, marshalError := util.UnmarshalFunctionResult(functionOutput)
+		if marshalError == nil {
+			log.Println("Found function result structure: writing forward header")
+			decodedResult, decodingError := base64.StdEncoding.DecodeString(functionResult.Result)
+			if decodingError == nil {
+				log.Println("Decoding base64 encoded function result")
+				functionOutput = decodedResult
+			}
+			if !isHeaderWritten {
+				response.Header().Set("X-OpenBrisk-Forward", functionResult.Forward.To)
+			}
+		}
 	}()
 
 	waitGroup.Wait()

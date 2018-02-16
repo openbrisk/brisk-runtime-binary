@@ -8,4 +8,9 @@ function execute() {
 
     # application/json based input using jq (installed by default).
     #jq --raw-output '.text' | figlet
+
+    # Return forward structure.
+    #fig=`figlet`
+    #target='https://target.url/hooks'
+    #forward "$fig" "$target"
 }

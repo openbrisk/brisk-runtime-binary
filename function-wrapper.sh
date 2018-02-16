@@ -5,6 +5,7 @@
 # script.
 
 (
+    source ./forward.sh
     source /openbrisk/$MODULE_NAME.sh
 
     # Check if the function exists (bash specific).
