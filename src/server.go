@@ -2,55 +2,161 @@ package main
 
 import (
 	"fmt"
+	"io/ioutil"
+	"log"
 	"net/http"
-	//"os"
+	"os"
 	"os/exec"
-)
-
-const (
-	DefaultFunctionDirectory string = "/openbrisk/"
-	DevFunctionDirectory     string = "../examples/"
+	"strconv"
+	"sync"
+	"time"
 )
 
 var (
-	moduleName         string      // $MODULE_NAME.sh
-	moduleDependencies string      // $MODULE_NAME.deps.sh
-	functionHandler    string      // not nedded?
-	functionTimeout    int    = 10 // NOTE: Define default value.
+	moduleName         string // $MODULE_NAME.sh
+	moduleDependencies string // $MODULE_NAME.deps.sh
+	functionHandler    string // $FUNCTION_HANDLER
+	functionTimeout    = 10   // $FUNCTION_TIMEOUT
+	envError           error
 )
 
 func main() {
-	// TODO: Read env variables and set for warapper script.
-	// TODO: Pipe input into script.
-	command := exec.Command("./function-wrapper.sh")
-	output, e := command.Output();
-	if e == nil {
-		fmt.Printf("%s", output);
-	}
+	readEnvironment()
 
+	// Handle GET requests to the health check endpoint.
 	http.HandleFunc("/healthz", func(response http.ResponseWriter, request *http.Request) {
-		if(request.Method == "GET") {
-			response.Header().Set("Content-Type", "text/plain")
-			response.Header().Set("Connection", "close")
+		if request.Method == "GET" {
 			response.WriteHeader(http.StatusOK)
 		} else {
-			response.WriteHeader(http.StatusNotFound)
+			response.WriteHeader(http.StatusMethodNotAllowed)
 		}
 	})
 
+	// Handle GET and POST requests to the function endpoint.
 	http.HandleFunc("/", func(response http.ResponseWriter, request *http.Request) {
-		if(request.Method == "GET") {
-			// TODO: Handle function invocation without parameters. 
-		} else if(request.Method == "POST") {
-			// TODO: Handle function invocation with parameters.
-		} else {
-			response.WriteHeader(http.StatusNotFound)
+		switch request.Method {
+		case
+			"GET", "POST":
+			executeFunction(response, request)
+			break
+		default:
+			response.WriteHeader(http.StatusMethodNotAllowed)
 		}
 	})
 
-	fmt.Println("Listening on port 8080 ...")
-	/*var error = http.ListenAndServe(":8080", nil)
-	if error != nil {
-		panic(error)
-	}*/
+	log.Println("Listening on port 8080 ...")
+	log.Fatal(http.ListenAndServe(":8080", nil))
+}
+
+// readEnvironment reads the environment variables of the function and logs the results.
+func readEnvironment() {
+	moduleName = os.Getenv("MODULE_NAME")
+	log.Printf("Using module script: %s.sh", moduleName)
+
+	moduleDependencies = os.Getenv("MODULE_NAME")
+	log.Printf("Using module deps script: %s.deps.sh", moduleDependencies)
+
+	functionHandler = os.Getenv("FUNCTION_HANDLER")
+	log.Printf("Using function handler: %s", functionHandler)
+
+	if os.Getenv("FUNCTION_TIMEOUT") != "" {
+		functionTimeout, envError = strconv.Atoi(os.Getenv("FUNCTION_TIMEOUT"))
+		if envError != nil {
+			log.Fatal(envError)
+		}
+	}
+	log.Printf("Using function timeout: %d seconds", functionTimeout)
+}
+
+// executeFunction executes the function script using the http requests body as input.
+// The duration header and timeout features are supported.
+func executeFunction(response http.ResponseWriter, request *http.Request) {
+	start := time.Now()
+
+	log.Println("Running function wrapper script")
+	command := exec.Command("./function-wrapper.sh")
+	pipeWriter, _ := command.StdinPipe()
+
+	var isHeaderWritten = false
+	var functionInput []byte
+	var functionOutput []byte
+	var err error
+	var waitGroup sync.WaitGroup
+	var timer *time.Timer
+
+	functionInput = getRequestBody(request)
+
+	waitGroup.Add(2)
+
+	// Create timer that kills the script after the defined timeout.
+	if functionTimeout > 0 {
+		timer = time.NewTimer(time.Duration(functionTimeout * 1000000000))
+
+		go func() {
+			<-timer.C
+			log.Println("Function timed out: killing function process")
+
+			if command != nil && command.Process != nil {
+				isHeaderWritten = true
+				response.WriteHeader(http.StatusRequestTimeout)
+				response.Write([]byte("Function timed out: killed function process\n"))
+
+				processKillError := command.Process.Kill()
+				if processKillError != nil {
+					log.Fatal(processKillError.Error())
+				}
+			}
+		}()
+	}
+
+	// Pipe input body to function in go routine to prevent blocking.
+	go func() {
+		defer waitGroup.Done()
+		pipeWriter.Write(functionInput)
+		pipeWriter.Close()
+	}()
+
+	// Get the output value from the combined stdout and stderr of the function script.
+	go func() {
+		defer waitGroup.Done()
+		functionOutput, err = command.CombinedOutput()
+	}()
+
+	waitGroup.Wait()
+	if timer != nil {
+		timer.Stop()
+	}
+
+	// Write the duration header in nanoseconds.
+	duration := time.Since(start)
+	if !isHeaderWritten {
+		response.Header().Set("X-OpenBrisk-Duration", fmt.Sprint(duration.Nanoseconds()))
+		response.WriteHeader(http.StatusOK)
+		response.Write(functionOutput)
+		isHeaderWritten = true
+	}
+	log.Printf("Function execution duration: %s nanoseconds", fmt.Sprint(duration.Nanoseconds()))
+}
+
+// getRequestBody returns the request body data (the function input) as byte array.
+func getRequestBody(request *http.Request) []byte {
+	var body []byte
+	var err error
+
+	// No request body: return the empty byte array.
+	if request.Body == nil {
+		return body
+	}
+
+	// Close the body stream at the end of the function.
+	defer request.Body.Close()
+
+	// Read request body.
+	body, err = ioutil.ReadAll(request.Body)
+	// TODO: Better error handling: Send back per http response?
+	if err != nil {
+		return body
+	}
+
+	return body
 }

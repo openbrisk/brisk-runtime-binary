@@ -4,24 +4,21 @@
 # any error caused by usage of exit() in the child function
 # script.
 
-echo $MODULE_NAME
-echo $FUNCTION_HANDLER
-# TODO: Forward env to subshell
-
 (
-    source ./examples/$MODULE_NAME.sh
+    source /openbrisk/$MODULE_NAME.sh
 
     # Check if the function exists (bash specific).
-    if declare -f "$1" > /dev/null
+    if declare -f "$FUNCTION_HANDLER" > /dev/null
     then
-        # Call arguments verbatim.
-        "$@"
+        # Call function.
+        "$FUNCTION_HANDLER"
     else
         # Show an error message.
-        echo "The function handler '$1' is not known."
+        echo "The function handler '$FUNCTION_HANDLER' is not known."
     fi
 )
 
-if [ ! "$?" = 0 ]; then
+if [ ! "$?" = 0 ]
+then
     echo "The function exited with an error."
 fi

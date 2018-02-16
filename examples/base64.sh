@@ -1,4 +1,6 @@
 #!/bin/bash
 
-read input
-base64 $input
+function execute() {
+    read input
+    base64 $input
+}
