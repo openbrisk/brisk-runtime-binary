@@ -3,7 +3,8 @@ package main
 import (
 	"fmt"
 	"net/http"
-	"os"
+	//"os"
+	"os/exec"
 )
 
 const (
@@ -12,36 +13,44 @@ const (
 )
 
 var (
-	moduleName         string      // figlet.sh
-	moduleDependencies string      // figlet.deps.sh
+	moduleName         string      // $MODULE_NAME.sh
+	moduleDependencies string      // $MODULE_NAME.deps.sh
 	functionHandler    string      // not nedded?
 	functionTimeout    int    = 10 // NOTE: Define default value.
 )
 
 func main() {
-	fmt.Println(os.Getenv("MODULE_NAME"))
-	fmt.Println(os.Getenv("FUNCTION_HANDLER"))
-	fmt.Println(os.Getenv("FUNCTION_DEPENDENCIES"))
-
-	/*if os.Getenv("FUNCTION_TIMEOUT") != "" {
-		functionTimeout, err := strconv.Atoi(os.Getenv("FUNCTION_TIMEOUT"))
-		if err != nil {
-			fmt.Println(err)
-			os.Exit(2)
-		}
-
-		fmt.Println(functionTimeout)
-	}*/
+	// TODO: Read env variables and set for warapper script.
+	// TODO: Pipe input into script.
+	command := exec.Command("./function-wrapper.sh")
+	output, e := command.Output();
+	if e == nil {
+		fmt.Printf("%s", output);
+	}
 
 	http.HandleFunc("/healthz", func(response http.ResponseWriter, request *http.Request) {
-		response.Header().Set("Content-Type", "text/plain")
-		response.Header().Set("Connection", "close")
-		response.WriteHeader(http.StatusOK)
+		if(request.Method == "GET") {
+			response.Header().Set("Content-Type", "text/plain")
+			response.Header().Set("Connection", "close")
+			response.WriteHeader(http.StatusOK)
+		} else {
+			response.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	http.HandleFunc("/", func(response http.ResponseWriter, request *http.Request) {
+		if(request.Method == "GET") {
+			// TODO: Handle function invocation without parameters. 
+		} else if(request.Method == "POST") {
+			// TODO: Handle function invocation with parameters.
+		} else {
+			response.WriteHeader(http.StatusNotFound)
+		}
 	})
 
 	fmt.Println("Listening on port 8080 ...")
-	var error = http.ListenAndServe(":8080", nil)
+	/*var error = http.ListenAndServe(":8080", nil)
 	if error != nil {
 		panic(error)
-	}
+	}*/
 }
