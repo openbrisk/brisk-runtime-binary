@@ -7,7 +7,6 @@ COPY . .
 RUN GOOS=linux GOARCH=amd64 go build -o server ./src/server.go
 
 # Release stage
-# NOTE: Keep this up to date.
 FROM ubuntu:18.04 
 
 WORKDIR /app
